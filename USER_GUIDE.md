@@ -9,8 +9,10 @@ keeping track of intellectual relationships between papers.
 2. Select **Import paper** and choose a PDF. Lattice copies it into
    `~/Documents/Lattice Library/PDFs/`, so the PDF remains an ordinary file.
 3. Select a paper in the left sidebar to read it.
-4. Use the right sidebar for your summary, working note, tags, highlights, and
-   linked papers. Notes save automatically in the local database.
+4. Use the right sidebar for your summary, working notes, tags, highlights, and
+   linked papers. Use **+** to add as many titled working notes as you need;
+   select a note's title to expand or collapse it. Notes save automatically in
+   the local database, with their save status shown beside the title.
 5. Select **+** beside **Workspaces** to make a project. Right-click a paper to
    rename its short Lattice label, add it to one or several workspaces, mark it
    as a favorite, link it to another paper, or remove it from Lattice. Renaming
@@ -29,6 +31,9 @@ keeping track of intellectual relationships between papers.
 4. Select **Save highlight**. It appears in the right sidebar and is included in
    research-context exports.
 
+Use the pencil beside a saved highlight to edit its passage, page, or comment.
+Deleting a highlight asks for confirmation and never changes the PDF itself.
+
 Lattice currently stores the passage, page, and comment in its local database.
 It does not yet draw the highlight onto the PDF or write a standard PDF
 annotation.
@@ -41,8 +46,17 @@ annotation.
   from its last workspace returns it to Inbox.
 - To link papers, right-click a paper and choose **Link to paper…**, or select
   **+** beside **Linked papers** in the right panel. Choose the other paper and
-  describe the relationship. Links appear from both papers and can be removed
-  with the × beside the link.
+  describe the relationship. Links appear from both papers. Use the pencil to
+  edit a relationship, or × to remove it after confirmation.
+
+## Summaries and paper details
+
+- Select the pencil beside **My summary** to write or edit a summary.
+- The same dialog lets you enter authors, year, and publication information.
+- For imported PDFs, Lattice reads embedded PDF metadata and the first page
+  locally and may offer an author/year suggestion. Suggestions are never saved
+  unless you choose **Use suggestion** and then **Save details**.
+- Editing these fields never renames or rewrites the PDF.
 
 ## Removing things safely
 

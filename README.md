@@ -43,17 +43,18 @@ npm run desktop:build -- --bundles app
 
 - Three-pane paper reader and research context
 - Local PDF import into an ordinary filesystem folder
-- SQLite-backed working notes and paper metadata
+- SQLite-backed titled, collapsible working notes and editable paper metadata
 - Persistent workspaces, favorites, recent papers, command search, and paper switching
 - Right-click paper/workspace management with confirmation-safe removal
 - Custom paper labels that leave academic titles and PDF filenames unchanged
-- Local passage highlights with page numbers and comments
-- Automatic unassigned-paper Inbox and persistent paper-to-paper links
+- Local editable passage highlights with page numbers and comments
+- Automatic unassigned-paper Inbox and editable paper-to-paper links
+- Conservative author/year suggestions from PDF metadata and the first page
 - Multi-paper Markdown context bundles for use with ChatGPT
 
-PDF rendering uses an in-app PDF.js text layer, so saving a highlight uses a
-select-then-Control-H workflow. Restoring anchored colored overlays after
-reopening and standard PDF annotation writeback remain major milestones.
+PDF rendering uses PDF.js's full selectable text layer, so saving a highlight
+uses a select-then-Control-H workflow. Restoring anchored colored overlays
+after reopening and standard PDF annotation writeback remain major milestones.
 
 ## Contributing with an LLM coding agent
 

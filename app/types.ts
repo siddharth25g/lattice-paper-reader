@@ -37,6 +37,26 @@ export type PaperLink = {
   detail: string;
 };
 
+export type WorkingNote = {
+  id: string;
+  paperId: string;
+  title: string;
+  body: string;
+  position: number;
+};
+
+export type PaperMetadataOverride = {
+  authors: string;
+  year: number;
+  journal: string;
+  summary: string;
+};
+
+export type PdfMetadataSuggestion = {
+  authors?: string;
+  year?: number;
+};
+
 export type LibraryState = {
   workspaces: Workspace[];
   memberships: Record<string, string[]>;
@@ -46,4 +66,5 @@ export type LibraryState = {
   recentPaperIds: string[];
   paperAliases: Record<string, string>;
   paperLinks: PaperLink[];
+  metadataOverrides: Record<string, PaperMetadataOverride>;
 };
