@@ -2,6 +2,7 @@
 
 ## 0.2.0 — 2026-08-25
 
+- Added persistent custom paper labels through the right-click paper menu.
 - Made Library, Inbox, Recently read, Favorites, and workspaces functional.
 - Added persistent workspace creation and paper membership.
 - Added right-click menus for favorites, workspace assignment, and safe removal.

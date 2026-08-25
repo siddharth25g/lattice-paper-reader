@@ -36,4 +36,5 @@ export type LibraryState = {
   highlights: Record<string, Highlight[]>;
   favoritePaperIds: string[];
   recentPaperIds: string[];
+  paperAliases: Record<string, string>;
 };

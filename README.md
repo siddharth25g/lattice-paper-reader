@@ -46,6 +46,7 @@ npm run desktop:build -- --bundles app
 - SQLite-backed working notes and paper metadata
 - Persistent workspaces, favorites, recent papers, command search, and paper switching
 - Right-click paper/workspace management with confirmation-safe removal
+- Custom paper labels that leave academic titles and PDF filenames unchanged
 - Local passage highlights with page numbers and comments
 - Multi-paper Markdown context bundles for use with ChatGPT
 

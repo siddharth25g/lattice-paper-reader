@@ -87,6 +87,11 @@ async function database() {
         paper_id TEXT PRIMARY KEY,
         last_opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS paper_aliases (
+        paper_id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
       const seeded = await db.select<{ value: string }[]>("SELECT value FROM app_meta WHERE key = 'default_workspaces_seeded'");
       if (!seeded.length) {
         await db.execute("INSERT INTO workspaces (id, name, color) VALUES ($1, $2, $3)", ["hank-ftpl", "HANK × FTPL", "#a95a43"]);
@@ -215,13 +220,14 @@ export async function saveDesktopNote(paperId: string, body: string) {
 
 export async function loadDesktopLibraryState(): Promise<LibraryState> {
   const db = await database();
-  const [workspaces, memberships, hidden, highlights, favorites, recent] = await Promise.all([
+  const [workspaces, memberships, hidden, highlights, favorites, recent, aliases] = await Promise.all([
     db.select<Workspace[]>("SELECT id, name, color FROM workspaces ORDER BY created_at ASC"),
     db.select<{ workspace_id: string; paper_id: string }[]>("SELECT workspace_id, paper_id FROM workspace_papers"),
     db.select<{ paper_id: string }[]>("SELECT paper_id FROM hidden_papers"),
     db.select<{ id: string; paper_id: string; page: number; selected_text: string; comment: string }[]>("SELECT id, paper_id, page, selected_text, comment FROM highlights ORDER BY created_at ASC"),
     db.select<{ paper_id: string }[]>("SELECT paper_id FROM favorite_papers"),
     db.select<{ paper_id: string }[]>("SELECT paper_id FROM paper_activity ORDER BY last_opened_at DESC LIMIT 50"),
+    db.select<{ paper_id: string; label: string }[]>("SELECT paper_id, label FROM paper_aliases"),
   ]);
   const membershipMap: Record<string, string[]> = {};
   for (const row of memberships) (membershipMap[row.workspace_id] ??= []).push(row.paper_id);
@@ -236,6 +242,7 @@ export async function loadDesktopLibraryState(): Promise<LibraryState> {
     highlights: highlightMap,
     favoritePaperIds: favorites.map((row) => row.paper_id),
     recentPaperIds: recent.map((row) => row.paper_id),
+    paperAliases: Object.fromEntries(aliases.map((row) => [row.paper_id, row.label])),
   };
 }
 
@@ -262,6 +269,7 @@ export async function removeDesktopPaper(paperId: string, imported: boolean) {
   await db.execute("DELETE FROM highlights WHERE paper_id = $1", [paperId]);
   await db.execute("DELETE FROM favorite_papers WHERE paper_id = $1", [paperId]);
   await db.execute("DELETE FROM paper_activity WHERE paper_id = $1", [paperId]);
+  await db.execute("DELETE FROM paper_aliases WHERE paper_id = $1", [paperId]);
   if (imported) {
     await db.execute("DELETE FROM notes WHERE paper_id = $1", [paperId]);
     await db.execute("DELETE FROM papers WHERE id = $1", [paperId]);
@@ -290,5 +298,14 @@ export async function recordDesktopPaperOpened(paperId: string) {
     `INSERT INTO paper_activity (paper_id, last_opened_at) VALUES ($1, CURRENT_TIMESTAMP)
      ON CONFLICT(paper_id) DO UPDATE SET last_opened_at = CURRENT_TIMESTAMP`,
     [paperId],
+  );
+}
+
+export async function saveDesktopPaperAlias(paperId: string, label: string) {
+  const db = await database();
+  await db.execute(
+    `INSERT INTO paper_aliases (paper_id, label, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT(paper_id) DO UPDATE SET label = excluded.label, updated_at = CURRENT_TIMESTAMP`,
+    [paperId, label],
   );
 }

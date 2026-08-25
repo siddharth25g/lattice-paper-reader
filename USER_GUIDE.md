@@ -12,8 +12,10 @@ keeping track of intellectual relationships between papers.
 4. Use the right sidebar for your summary, working note, tags, highlights, and
    linked papers. Notes save automatically in the local database.
 5. Select **+** beside **Workspaces** to make a project. Right-click a paper to
-   add it to one or several workspaces, mark it as a favorite, or remove it from
-   Lattice. Right-click a workspace to delete it; its papers remain in Library.
+   rename its short Lattice label, add it to one or several workspaces, mark it
+   as a favorite, or remove it from Lattice. Renaming the label does not change
+   the academic title or PDF filename. Right-click a workspace to delete it;
+   its papers remain in Library.
 6. Press **⌘K** to search the library quickly.
 7. Select **Prepare research context** to choose several papers and copy or
    download a Markdown bundle containing their summaries, notes, and
