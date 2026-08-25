@@ -3,7 +3,7 @@ import { basename, documentDir, join } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { BaseDirectory, copyFile, exists, mkdir } from "@tauri-apps/plugin-fs";
 import Database from "@tauri-apps/plugin-sql";
-import type { Paper } from "./page";
+import type { Highlight, LibraryState, Paper, Workspace } from "./types";
 
 const LIBRARY_FOLDER = "Lattice Library";
 const PDF_FOLDER = `${LIBRARY_FOLDER}/PDFs`;
@@ -52,6 +52,51 @@ async function database() {
         body TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS app_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS workspace_papers (
+        workspace_id TEXT NOT NULL,
+        paper_id TEXT NOT NULL,
+        PRIMARY KEY (workspace_id, paper_id)
+      )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS hidden_papers (
+        paper_id TEXT PRIMARY KEY,
+        hidden_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS highlights (
+        id TEXT PRIMARY KEY,
+        paper_id TEXT NOT NULL,
+        page INTEGER NOT NULL,
+        selected_text TEXT NOT NULL,
+        comment TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS favorite_papers (
+        paper_id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS paper_activity (
+        paper_id TEXT PRIMARY KEY,
+        last_opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      const seeded = await db.select<{ value: string }[]>("SELECT value FROM app_meta WHERE key = 'default_workspaces_seeded'");
+      if (!seeded.length) {
+        await db.execute("INSERT INTO workspaces (id, name, color) VALUES ($1, $2, $3)", ["hank-ftpl", "HANK × FTPL", "#a95a43"]);
+        await db.execute("INSERT INTO workspaces (id, name, color) VALUES ($1, $2, $3)", ["public-pensions", "Public pensions", "#687c63"]);
+        await db.execute("INSERT INTO workspaces (id, name, color) VALUES ($1, $2, $3)", ["sequence-space", "Sequence space", "#69728d"]);
+        for (const paperId of ["auclert", "kaplan", "cochrane", "bassetto"]) {
+          await db.execute("INSERT OR IGNORE INTO workspace_papers (workspace_id, paper_id) VALUES ($1, $2)", ["hank-ftpl", paperId]);
+        }
+        await db.execute("INSERT INTO app_meta (key, value) VALUES ('default_workspaces_seeded', '1')");
+      }
       return db;
     });
   }
@@ -165,5 +210,85 @@ export async function saveDesktopNote(paperId: string, body: string) {
     `INSERT INTO notes (paper_id, body, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
      ON CONFLICT(paper_id) DO UPDATE SET body = excluded.body, updated_at = CURRENT_TIMESTAMP`,
     [paperId, body],
+  );
+}
+
+export async function loadDesktopLibraryState(): Promise<LibraryState> {
+  const db = await database();
+  const [workspaces, memberships, hidden, highlights, favorites, recent] = await Promise.all([
+    db.select<Workspace[]>("SELECT id, name, color FROM workspaces ORDER BY created_at ASC"),
+    db.select<{ workspace_id: string; paper_id: string }[]>("SELECT workspace_id, paper_id FROM workspace_papers"),
+    db.select<{ paper_id: string }[]>("SELECT paper_id FROM hidden_papers"),
+    db.select<{ id: string; paper_id: string; page: number; selected_text: string; comment: string }[]>("SELECT id, paper_id, page, selected_text, comment FROM highlights ORDER BY created_at ASC"),
+    db.select<{ paper_id: string }[]>("SELECT paper_id FROM favorite_papers"),
+    db.select<{ paper_id: string }[]>("SELECT paper_id FROM paper_activity ORDER BY last_opened_at DESC LIMIT 50"),
+  ]);
+  const membershipMap: Record<string, string[]> = {};
+  for (const row of memberships) (membershipMap[row.workspace_id] ??= []).push(row.paper_id);
+  const highlightMap: Record<string, Highlight[]> = {};
+  for (const row of highlights) {
+    (highlightMap[row.paper_id] ??= []).push({ id: row.id, page: Number(row.page), text: row.selected_text, comment: row.comment });
+  }
+  return {
+    workspaces,
+    memberships: membershipMap,
+    hiddenPaperIds: hidden.map((row) => row.paper_id),
+    highlights: highlightMap,
+    favoritePaperIds: favorites.map((row) => row.paper_id),
+    recentPaperIds: recent.map((row) => row.paper_id),
+  };
+}
+
+export async function createDesktopWorkspace(workspace: Workspace) {
+  const db = await database();
+  await db.execute("INSERT INTO workspaces (id, name, color) VALUES ($1, $2, $3)", [workspace.id, workspace.name, workspace.color]);
+}
+
+export async function deleteDesktopWorkspace(workspaceId: string) {
+  const db = await database();
+  await db.execute("DELETE FROM workspace_papers WHERE workspace_id = $1", [workspaceId]);
+  await db.execute("DELETE FROM workspaces WHERE id = $1", [workspaceId]);
+}
+
+export async function setDesktopWorkspaceMembership(workspaceId: string, paperId: string, member: boolean) {
+  const db = await database();
+  if (member) await db.execute("INSERT OR IGNORE INTO workspace_papers (workspace_id, paper_id) VALUES ($1, $2)", [workspaceId, paperId]);
+  else await db.execute("DELETE FROM workspace_papers WHERE workspace_id = $1 AND paper_id = $2", [workspaceId, paperId]);
+}
+
+export async function removeDesktopPaper(paperId: string, imported: boolean) {
+  const db = await database();
+  await db.execute("DELETE FROM workspace_papers WHERE paper_id = $1", [paperId]);
+  await db.execute("DELETE FROM highlights WHERE paper_id = $1", [paperId]);
+  await db.execute("DELETE FROM favorite_papers WHERE paper_id = $1", [paperId]);
+  await db.execute("DELETE FROM paper_activity WHERE paper_id = $1", [paperId]);
+  if (imported) {
+    await db.execute("DELETE FROM notes WHERE paper_id = $1", [paperId]);
+    await db.execute("DELETE FROM papers WHERE id = $1", [paperId]);
+  } else {
+    await db.execute("INSERT OR IGNORE INTO hidden_papers (paper_id) VALUES ($1)", [paperId]);
+  }
+}
+
+export async function saveDesktopHighlight(paperId: string, highlight: Highlight) {
+  const db = await database();
+  await db.execute(
+    "INSERT INTO highlights (id, paper_id, page, selected_text, comment) VALUES ($1, $2, $3, $4, $5)",
+    [highlight.id, paperId, highlight.page, highlight.text, highlight.comment],
+  );
+}
+
+export async function setDesktopFavorite(paperId: string, favorite: boolean) {
+  const db = await database();
+  if (favorite) await db.execute("INSERT OR IGNORE INTO favorite_papers (paper_id) VALUES ($1)", [paperId]);
+  else await db.execute("DELETE FROM favorite_papers WHERE paper_id = $1", [paperId]);
+}
+
+export async function recordDesktopPaperOpened(paperId: string) {
+  const db = await database();
+  await db.execute(
+    `INSERT INTO paper_activity (paper_id, last_opened_at) VALUES ($1, CURRENT_TIMESTAMP)
+     ON CONFLICT(paper_id) DO UPDATE SET last_opened_at = CURRENT_TIMESTAMP`,
+    [paperId],
   );
 }

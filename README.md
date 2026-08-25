@@ -44,11 +44,14 @@ npm run desktop:build -- --bundles app
 - Three-pane paper reader and research context
 - Local PDF import into an ordinary filesystem folder
 - SQLite-backed working notes and paper metadata
-- Workspaces, tags, linked papers, command search, and paper switching
+- Persistent workspaces, favorites, recent papers, command search, and paper switching
+- Right-click paper/workspace management with confirmation-safe removal
+- Local passage highlights with page numbers and comments
 - Multi-paper Markdown context bundles for use with ChatGPT
 
-PDF rendering currently uses the macOS web view. Anchored text highlights and
-standard PDF annotation writeback are the next major implementation milestone.
+PDF rendering currently uses the macOS web view. Saving a highlight uses a
+select-copy-press-H workflow. Anchored colored overlays and standard PDF
+annotation writeback remain the next major implementation milestone.
 
 ## Contributing with an LLM coding agent
 
