@@ -2,6 +2,10 @@
 
 ## 0.2.0 — 2026-08-25
 
+- Made Inbox automatically contain only papers with no workspace.
+- Added persistent bidirectional paper links with relation notes and unlinking.
+- Replaced the opaque PDF frame with a selectable local PDF reader and added
+  Control-H highlight capture with automatic page detection.
 - Added persistent custom paper labels through the right-click paper menu.
 - Made Library, Inbox, Recently read, Favorites, and workspaces functional.
 - Added persistent workspace creation and paper membership.

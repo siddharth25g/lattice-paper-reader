@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  createDesktopWorkspace, deleteDesktopWorkspace, importDesktopPaper, isDesktopApp,
+  createDesktopWorkspace, deleteDesktopPaperLink, deleteDesktopWorkspace, importDesktopPaper, isDesktopApp,
   loadDesktopLibraryState, loadDesktopNotes, loadDesktopPapers, recordDesktopPaperOpened,
   removeDesktopPaper, saveDesktopHighlight, saveDesktopNote, setDesktopFavorite,
-  saveDesktopPaperAlias, setDesktopWorkspaceMembership,
+  saveDesktopPaperAlias, saveDesktopPaperLink, setDesktopWorkspaceMembership,
 } from "./desktop";
-import type { Highlight, LibraryState, Paper, Workspace } from "./types";
+import { PdfReader } from "./PdfReader";
+import type { Highlight, LibraryState, Paper, PaperLink, Workspace } from "./types";
 
 export type { Paper } from "./types";
 
@@ -30,8 +31,10 @@ const defaultWorkspaces: Workspace[] = [
   { id: "public-pensions", name: "Public pensions", color: "#687c63" },
   { id: "sequence-space", name: "Sequence space", color: "#69728d" },
 ];
-const defaultLibraryState: LibraryState = { workspaces: defaultWorkspaces, memberships: { "hank-ftpl": ["auclert", "kaplan", "cochrane", "bassetto"] }, hiddenPaperIds: [], highlights: {}, favoritePaperIds: [], recentPaperIds: [], paperAliases: {} };
-const linked = [{ id: "kaplan", relation: "mechanism", detail: "Indirect income effects" }, { id: "cochrane", relation: "contrast", detail: "Debt valuation channel" }];
+const defaultLibraryState: LibraryState = { workspaces: defaultWorkspaces, memberships: { "hank-ftpl": ["auclert", "kaplan", "cochrane", "bassetto"] }, hiddenPaperIds: [], highlights: {}, favoritePaperIds: [], recentPaperIds: [], paperAliases: {}, paperLinks: [
+  { id: "starter-link-kaplan", sourcePaperId: "auclert", targetPaperId: "kaplan", relation: "mechanism", detail: "Indirect income effects" },
+  { id: "starter-link-cochrane", sourcePaperId: "auclert", targetPaperId: "cochrane", relation: "contrast", detail: "Debt valuation channel" },
+] };
 const DB_NAME = "lattice-local-library";
 const DB_STORE = "papers";
 const STATE_KEY = "lattice-library-state-v2";
@@ -52,7 +55,7 @@ async function storeLocalPaper(paper: Paper, file: File) {
 async function readLocalPapers(): Promise<Paper[]> {
   const db = await openLibraryDb();
   const records = await new Promise<{ paper: Paper; file: Blob }[]>((resolve, reject) => { const request = db.transaction(DB_STORE, "readonly").objectStore(DB_STORE).getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); db.close();
-  return records.map(({ paper, file }) => ({ ...paper, pdfUrl: URL.createObjectURL(file) }));
+  return records.map(({ paper, file }) => ({ ...paper, tags: paper.tags.filter((tag) => tag !== "Inbox"), pdfUrl: URL.createObjectURL(file) }));
 }
 async function deleteLocalPaper(paperId: string) {
   const db = await openLibraryDb();
@@ -87,23 +90,33 @@ export default function Home() {
   const [highlightComment, setHighlightComment] = useState("");
   const [renamePaperId, setRenamePaperId] = useState<string | null>(null);
   const [paperLabel, setPaperLabel] = useState("");
+  const [linkSourceId, setLinkSourceId] = useState<string | null>(null);
+  const [linkTargetId, setLinkTargetId] = useState("");
+  const [linkRelation, setLinkRelation] = useState("related");
+  const [linkDetail, setLinkDetail] = useState("");
   const [notice, setNotice] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const readerStageRef = useRef<HTMLDivElement>(null);
 
   const availablePapers = useMemo(() => libraryPapers.filter((paper) => !libraryState.hiddenPaperIds.includes(paper.id)), [libraryPapers, libraryState.hiddenPaperIds]);
+  const assignedPaperIds = useMemo(() => new Set(Object.values(libraryState.memberships).flat()), [libraryState.memberships]);
+  const inboxPapers = useMemo(() => availablePapers.filter((paper) => !assignedPaperIds.has(paper.id)), [assignedPaperIds, availablePapers]);
   const papersInView = useMemo(() => {
-    if (view.kind === "inbox") return availablePapers.filter((paper) => paper.tags.includes("Inbox"));
+    if (view.kind === "inbox") return inboxPapers;
     if (view.kind === "recent") return libraryState.recentPaperIds.map((id) => availablePapers.find((paper) => paper.id === id)).filter(Boolean) as Paper[];
     if (view.kind === "favorites") return availablePapers.filter((paper) => libraryState.favoritePaperIds.includes(paper.id));
     if (view.kind === "workspace") return availablePapers.filter((paper) => libraryState.memberships[view.workspaceId ?? ""]?.includes(paper.id));
     return availablePapers;
-  }, [availablePapers, libraryState.favoritePaperIds, libraryState.memberships, libraryState.recentPaperIds, view]);
+  }, [availablePapers, inboxPapers, libraryState.favoritePaperIds, libraryState.memberships, libraryState.recentPaperIds, view]);
   const paperLabelFor = (paper: Paper) => libraryState.paperAliases[paper.id] ?? paper.cite;
   const visiblePapers = useMemo(() => { const term = query.trim().toLowerCase(); return term ? papersInView.filter((paper) => [paper.title, paper.authors, paper.tags.join(" "), libraryState.paperAliases[paper.id] ?? paper.cite].join(" ").toLowerCase().includes(term)) : papersInView; }, [libraryState.paperAliases, papersInView, query]);
   const commandResults = useMemo(() => { const term = query.trim().toLowerCase(); return term ? availablePapers.filter((paper) => [paper.title, paper.authors, paper.tags.join(" "), libraryState.paperAliases[paper.id] ?? paper.cite].join(" ").toLowerCase().includes(term)) : availablePapers; }, [availablePapers, libraryState.paperAliases, query]);
   const activePaper = visiblePapers.find((paper) => paper.id === activeId) ?? visiblePapers[0];
+  const activeLinks = activePaper ? libraryState.paperLinks.filter((link) => link.sourcePaperId === activePaper.id || link.targetPaperId === activePaper.id) : [];
+  const linkSourcePaper = linkSourceId ? availablePapers.find((paper) => paper.id === linkSourceId) : undefined;
+  const linkExistingIds = new Set(libraryState.paperLinks.flatMap((link) => link.sourcePaperId === linkSourceId ? [link.targetPaperId] : link.targetPaperId === linkSourceId ? [link.sourcePaperId] : []));
+  const linkCandidates = availablePapers.filter((paper) => paper.id !== linkSourceId && !linkExistingIds.has(paper.id));
   const selectedWorkspace = menu?.kind === "workspace" ? libraryState.workspaces.find((item) => item.id === menu.id) : undefined;
   const selectedMenuPaper = menu?.kind === "paper" ? availablePapers.find((item) => item.id === menu.id) : undefined;
   const activeViewName = view.kind === "workspace" ? libraryState.workspaces.find((item) => item.id === view.workspaceId)?.name ?? "Workspace" : ({ library: "Library", inbox: "Inbox", recent: "Recently read", favorites: "Favorites" } as const)[view.kind];
@@ -125,17 +138,24 @@ export default function Home() {
   }, [desktopApp]);
 
   async function beginHighlight(paper: Paper) {
-    let text = window.getSelection()?.toString().trim() ?? "";
+    const selection = window.getSelection();
+    let text = selection?.toString().trim() ?? "";
+    let page = 1;
+    if (selection?.rangeCount) {
+      const container = selection.getRangeAt(0).commonAncestorContainer;
+      const element = container.nodeType === Node.ELEMENT_NODE ? container as Element : container.parentElement;
+      page = Number(element?.closest("[data-page-number]")?.getAttribute("data-page-number")) || 1;
+    }
     if (!text && paper.pdfUrl) { try { text = (await navigator.clipboard.readText()).trim(); } catch { /* paste remains available */ } }
-    setHighlightText(text); setHighlightPage("1"); setHighlightComment(""); setHighlightOpen(true);
+    setHighlightText(text); setHighlightPage(String(page)); setHighlightComment(""); setHighlightOpen(true);
   }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement; const typing = ["INPUT", "TEXTAREA"].includes(target.tagName) || target.isContentEditable;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setCommandOpen((open) => !open); }
-      if (!typing && event.key.toLowerCase() === "h" && activePaper) { event.preventDefault(); void beginHighlight(activePaper); }
-      if (event.key === "Escape") { setCommandOpen(false); setMenu(null); setHighlightOpen(false); setCreateWorkspaceOpen(false); setRenamePaperId(null); }
+      if (!typing && event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "h" && activePaper) { event.preventDefault(); void beginHighlight(activePaper); }
+      if (event.key === "Escape") { setCommandOpen(false); setMenu(null); setHighlightOpen(false); setCreateWorkspaceOpen(false); setRenamePaperId(null); setLinkSourceId(null); }
     };
     window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown);
   });
@@ -157,7 +177,7 @@ export default function Home() {
     if (!file || file.type !== "application/pdf") return;
     const base = file.name.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
     const year = Number(base.match(/(?:19|20)\d{2}/)?.[0]) || new Date().getFullYear(); const title = base.replace(/(?:19|20)\d{2}/, "").trim() || "Untitled paper";
-    const paper: Paper = { id: `local-${Date.now()}`, cite: title.split(" ").slice(0, 2).join(" "), title, authors: "Metadata pending", year, journal: "Local PDF", status: "To read", tags: ["Inbox"], color: "#7b7469", summary: "Add a concise summary after reading this paper.", note: "", highlights: [], pdfUrl: URL.createObjectURL(file), fileName: file.name, imported: true };
+    const paper: Paper = { id: `local-${Date.now()}`, cite: title.split(" ").slice(0, 2).join(" "), title, authors: "Metadata pending", year, journal: "Local PDF", status: "To read", tags: [], color: "#7b7469", summary: "Add a concise summary after reading this paper.", note: "", highlights: [], pdfUrl: URL.createObjectURL(file), fileName: file.name, imported: true };
     setLibraryPapers((current) => [...current, paper]); selectView({ kind: "inbox" }); selectPaper(paper); await storeLocalPaper(paper, file).catch(() => setNotice("The paper opened, but could not be saved."));
   };
   const handleImport = async () => {
@@ -182,7 +202,7 @@ export default function Home() {
   const removePaper = async (paper: Paper) => {
     setMenu(null); const fileNote = paper.imported ? "The PDF file will stay in Documents/Lattice Library/PDFs." : "This only hides the included demo paper.";
     if (!window.confirm(`Remove “${paper.title}” from Lattice?\n\n${fileNote}`)) return;
-    updateLibraryState((state) => ({ ...state, hiddenPaperIds: paper.imported ? state.hiddenPaperIds : [...state.hiddenPaperIds, paper.id], memberships: Object.fromEntries(Object.entries(state.memberships).map(([id, ids]) => [id, ids.filter((paperId) => paperId !== paper.id)])), favoritePaperIds: state.favoritePaperIds.filter((id) => id !== paper.id), recentPaperIds: state.recentPaperIds.filter((id) => id !== paper.id) }));
+    updateLibraryState((state) => ({ ...state, hiddenPaperIds: paper.imported ? state.hiddenPaperIds : [...state.hiddenPaperIds, paper.id], memberships: Object.fromEntries(Object.entries(state.memberships).map(([id, ids]) => [id, ids.filter((paperId) => paperId !== paper.id)])), favoritePaperIds: state.favoritePaperIds.filter((id) => id !== paper.id), recentPaperIds: state.recentPaperIds.filter((id) => id !== paper.id), paperLinks: state.paperLinks.filter((link) => link.sourcePaperId !== paper.id && link.targetPaperId !== paper.id) }));
     if (paper.imported) { setLibraryPapers((items) => items.filter((item) => item.id !== paper.id)); if (!desktopApp) await deleteLocalPaper(paper.id).catch(() => undefined); }
     if (desktopApp) await removeDesktopPaper(paper.id, Boolean(paper.imported)).catch(() => setNotice("The paper could not be removed."));
   };
@@ -205,6 +225,22 @@ export default function Home() {
     setRenamePaperId(null); setNotice("Paper label renamed.");
     if (desktopApp) await saveDesktopPaperAlias(paperId, label).catch(() => setNotice("The paper label could not be saved."));
   };
+  const beginLinkPaper = (paper: Paper) => {
+    const existingIds = new Set(libraryState.paperLinks.flatMap((link) => link.sourcePaperId === paper.id ? [link.targetPaperId] : link.targetPaperId === paper.id ? [link.sourcePaperId] : []));
+    const firstTarget = availablePapers.find((candidate) => candidate.id !== paper.id && !existingIds.has(candidate.id));
+    setMenu(null); setLinkSourceId(paper.id); setLinkTargetId(firstTarget?.id ?? ""); setLinkRelation("related"); setLinkDetail("");
+  };
+  const saveLink = async () => {
+    if (!linkSourceId || !linkTargetId || linkSourceId === linkTargetId) return;
+    const link: PaperLink = { id: `link-${Date.now()}`, sourcePaperId: linkSourceId, targetPaperId: linkTargetId, relation: linkRelation.trim() || "related", detail: linkDetail.trim() };
+    updateLibraryState((state) => ({ ...state, paperLinks: [...state.paperLinks, link] }));
+    setLinkSourceId(null); setNotice("Paper link saved.");
+    if (desktopApp) await saveDesktopPaperLink(link).catch(() => setNotice("The paper link could not be saved."));
+  };
+  const removeLink = async (linkId: string) => {
+    updateLibraryState((state) => ({ ...state, paperLinks: state.paperLinks.filter((link) => link.id !== linkId) }));
+    if (desktopApp) await deleteDesktopPaperLink(linkId).catch(() => setNotice("The paper link could not be removed."));
+  };
   const saveHighlight = async () => {
     if (!activePaper || !highlightText.trim()) return;
     const highlight: Highlight = { id: `highlight-${Date.now()}`, page: Math.max(1, Number(highlightPage) || 1), text: highlightText.trim(), comment: highlightComment.trim() };
@@ -213,7 +249,7 @@ export default function Home() {
     if (desktopApp) await saveDesktopHighlight(activePaper.id, highlight).catch(() => setNotice("The highlight could not be saved."));
     setHighlightOpen(false); setNotice("Highlight saved locally.");
   };
-  const openContextBuilder = () => { if (!activePaper) return; setContextIds([activePaper.id, ...linked.map((item) => item.id)].filter((id, index, ids) => ids.indexOf(id) === index)); setCopyState("Copy context"); setContextOpen(true); };
+  const openContextBuilder = () => { if (!activePaper) return; setContextIds([activePaper.id, ...activeLinks.map((link) => link.sourcePaperId === activePaper.id ? link.targetPaperId : link.sourcePaperId)].filter((id, index, ids) => ids.indexOf(id) === index)); setCopyState("Copy context"); setContextOpen(true); };
   const buildContext = () => contextIds.map((id) => {
     const paper = availablePapers.find((item) => item.id === id); if (!paper) return "";
     const highlights = paper.highlights.length ? paper.highlights.map((item) => `- p. ${item.page}: “${item.text}”\n  Note: ${item.comment || "None"}`).join("\n") : "- None yet";
@@ -229,7 +265,7 @@ export default function Home() {
       <aside className="library-sidebar"><div className="sidebar-scroll">
         <nav className="primary-nav" aria-label="Library navigation">
           <button className={`nav-item ${view.kind === "library" ? "active" : ""}`} onClick={() => selectView({ kind: "library" })}><span className="nav-icon">▤</span>Library <span className="count">{availablePapers.length}</span></button>
-          <button className={`nav-item ${view.kind === "inbox" ? "active" : ""}`} onClick={() => selectView({ kind: "inbox" })}><span className="nav-icon">↘</span>Inbox <span className="count warm">{availablePapers.filter((paper) => paper.tags.includes("Inbox")).length}</span></button>
+          <button className={`nav-item ${view.kind === "inbox" ? "active" : ""}`} onClick={() => selectView({ kind: "inbox" })}><span className="nav-icon">↘</span>Inbox <span className="count warm">{inboxPapers.length}</span></button>
           <button className={`nav-item ${view.kind === "recent" ? "active" : ""}`} onClick={() => selectView({ kind: "recent" })}><span className="nav-icon">◷</span>Recently read</button>
           <button className={`nav-item ${view.kind === "favorites" ? "active" : ""}`} onClick={() => selectView({ kind: "favorites" })}><span className="nav-icon">☆</span>Favorites</button>
         </nav>
@@ -243,21 +279,34 @@ export default function Home() {
       </div><div className="sidebar-footer"><input ref={fileRef} className="file-input" type="file" accept="application/pdf" onChange={(event) => importPaper(event.target.files?.[0])} /><button className="import-button" onClick={handleImport}><span>＋</span> Import paper</button></div></aside>
 
       {activePaper ? <>
-        <section className="reader-column"><header className="paper-toolbar"><div className="paper-identity"><span className="eyebrow">{activePaper.authors} · {activePaper.year}</span><h1>{activePaper.title}</h1></div><div className="reader-actions"><button className="tool-button active" aria-label="Pointer" title="Pointer">↖</button><button className="tool-button" aria-label="Add highlight" title="Add highlight (H)" onClick={() => void beginHighlight(activePaper)}>▰</button><span className="toolbar-divider" /><button className="page-control" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(80, value - 8))}>−</button><span className="zoom-level">{zoom}%</span><button className="page-control" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(160, value + 8))}>＋</button><button className="tool-button" aria-label="Full screen" onClick={() => void readerStageRef.current?.requestFullscreen()}>⛶</button></div></header>
-          {activePaper.pdfUrl && <div className="reader-tip">Select text in the PDF, copy it, then press <kbd>H</kbd> to save a highlight.</div>}
-          <div className="reader-stage" ref={readerStageRef}>{!activePaper.pdfUrl && <div className="page-rail"><button>6</button><button className="active">7</button><button>8</button><button>9</button></div>}{activePaper.pdfUrl ? <div className="pdf-frame-wrap" style={{ width: `${zoom}%` }}><iframe className="pdf-frame" src={activePaper.pdfUrl} title={activePaper.title} /></div> : <article className="paper-page" style={{ transform: `scale(${zoom / 112})`, transformOrigin: "top center", marginBottom: `${Math.max(0, (zoom / 112 - 1) * 815)}px` }}><div className="journal-line">NBER WORKING PAPER SERIES</div><h2>{activePaper.title.toUpperCase()}</h2><p className="paper-authors">{activePaper.authors}</p><p className="paper-date">Working Paper · {activePaper.year}</p><div className="paper-rule" /><h3>2. A sufficient-statistics representation</h3><p>We characterize the aggregate response to a change in policy by separating the household-side exposure to income from the sequence of consumption responses. This representation makes the role of heterogeneity transparent while remaining agnostic about many details of the microeconomic environment.</p><p>Let the sequence of marginal propensities to consume summarize the response of household expenditure across dates. <Mark>The general equilibrium response can be represented as the interaction of intertemporal MPCs with income exposure.</Mark> The resulting object is useful because it separates the distributional incidence of a policy from equilibrium feedback.</p><div className="margin-note"><span>SG</span><p>Core sufficient-statistics result. This is the bridge to the valuation channel.</p></div><p>This decomposition also clarifies why representative-agent benchmarks can miss important dynamics. Two policies with the same present-value transfer may generate different paths for demand when their incidence across households or dates differs.</p><div className="paper-equation">ΔC = M · ΔY &nbsp;&nbsp; and &nbsp;&nbsp; ΔY = E · ΔG</div><p>Combining these expressions yields an intertemporal multiplier whose shape depends on the full matrix of household responses. The next section embeds this relation in general equilibrium.</p><span className="page-number">7</span></article>}</div>
+        <section className="reader-column"><header className="paper-toolbar"><div className="paper-identity"><span className="eyebrow">{activePaper.authors} · {activePaper.year}</span><h1>{activePaper.title}</h1></div><div className="reader-actions"><button className="tool-button active" aria-label="Pointer" title="Pointer">↖</button><button className="tool-button" aria-label="Add highlight" title="Add highlight (Control-H)" onClick={() => void beginHighlight(activePaper)}>▰</button><span className="toolbar-divider" /><button className="page-control" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(80, value - 8))}>−</button><span className="zoom-level">{zoom}%</span><button className="page-control" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(160, value + 8))}>＋</button><button className="tool-button" aria-label="Full screen" onClick={() => void readerStageRef.current?.requestFullscreen()}>⛶</button></div></header>
+          {activePaper.pdfUrl && <div className="reader-tip">Select text in the PDF, then press <kbd>Control H</kbd> to save a highlight.</div>}
+          <div className="reader-stage" ref={readerStageRef}>{!activePaper.pdfUrl && <div className="page-rail"><button>6</button><button className="active">7</button><button>8</button><button>9</button></div>}{activePaper.pdfUrl ? <PdfReader key={activePaper.id} url={activePaper.pdfUrl} title={activePaper.title} zoom={zoom} /> : <article className="paper-page" data-page-number="7" style={{ transform: `scale(${zoom / 112})`, transformOrigin: "top center", marginBottom: `${Math.max(0, (zoom / 112 - 1) * 815)}px` }}><div className="journal-line">NBER WORKING PAPER SERIES</div><h2>{activePaper.title.toUpperCase()}</h2><p className="paper-authors">{activePaper.authors}</p><p className="paper-date">Working Paper · {activePaper.year}</p><div className="paper-rule" /><h3>2. A sufficient-statistics representation</h3><p>We characterize the aggregate response to a change in policy by separating the household-side exposure to income from the sequence of consumption responses. This representation makes the role of heterogeneity transparent while remaining agnostic about many details of the microeconomic environment.</p><p>Let the sequence of marginal propensities to consume summarize the response of household expenditure across dates. <Mark>The general equilibrium response can be represented as the interaction of intertemporal MPCs with income exposure.</Mark> The resulting object is useful because it separates the distributional incidence of a policy from equilibrium feedback.</p><div className="margin-note"><span>SG</span><p>Core sufficient-statistics result. This is the bridge to the valuation channel.</p></div><p>This decomposition also clarifies why representative-agent benchmarks can miss important dynamics. Two policies with the same present-value transfer may generate different paths for demand when their incidence across households or dates differs.</p><div className="paper-equation">ΔC = M · ΔY &nbsp;&nbsp; and &nbsp;&nbsp; ΔY = E · ΔG</div><p>Combining these expressions yields an intertemporal multiplier whose shape depends on the full matrix of household responses. The next section embeds this relation in general equilibrium.</p><span className="page-number">7</span></article>}</div>
         </section>
         <aside className="context-panel"><div className="context-tabs" role="tablist"><button className={contextTab === "notes" ? "active" : ""} onClick={() => setContextTab("notes")}>Notes</button><button className={contextTab === "details" ? "active" : ""} onClick={() => setContextTab("details")}>Details</button></div>
-          {contextTab === "notes" ? <div className="context-scroll"><section className="context-section summary-section"><div className="context-heading"><span>My summary</span></div><p>{activePaper.summary}</p></section><section className="context-section"><div className="context-heading"><span>Working note</span><span className="saved">Saved</span></div><textarea className="note-editor" value={notes[activePaper.id] ?? activePaper.note} onChange={(event) => updateNote(event.target.value)} placeholder="Write while you read…" /></section><section className="context-section"><div className="context-heading"><span>Tags</span></div><div className="tag-row">{activePaper.tags.map((tag) => <span key={tag} className="tag">{tag}</span>)}</div></section><section className="context-section"><div className="context-heading"><span>Highlights</span><button aria-label="Add highlight" onClick={() => void beginHighlight(activePaper)}>＋</button></div>{activePaper.highlights.length ? activePaper.highlights.map((highlight) => <div className="highlight-card" key={highlight.id}><span className="highlight-page">p. {highlight.page}</span><q>{highlight.text}</q>{highlight.comment && <small>{highlight.comment}</small>}</div>) : <p className="empty-copy">No highlights yet. Select and copy text, then press H.</p>}</section><section className="context-section"><div className="context-heading"><span>Linked papers</span></div>{linked.map((item) => { const paper = availablePapers.find((entry) => entry.id === item.id); return paper ? <button className="linked-paper" key={item.id} onClick={() => { selectView({ kind: "library" }); selectPaper(paper); }}><span className="link-glyph">↗</span><span><b>{paperLabelFor(paper)} ({paper.year})</b><small><em>{item.relation}</em> · {item.detail}</small></span></button> : null; })}</section></div> : <div className="context-scroll details-pane"><section className="context-section"><div className="detail-cover" style={{ "--cover": activePaper.color } as React.CSSProperties}><span>{paperLabelFor(activePaper)}</span><b>{activePaper.title}</b><small>{activePaper.year}</small></div></section><section className="context-section metadata-list"><dl><dt>Authors</dt><dd>{activePaper.authors}</dd><dt>Published</dt><dd>{activePaper.journal}</dd><dt>Year</dt><dd>{activePaper.year}</dd><dt>Status</dt><dd><span className="status-pill">{activePaper.status}</span></dd><dt>Cite key</dt><dd className="mono">{activePaper.id}{activePaper.year}</dd></dl></section></div>}
+          {contextTab === "notes" ? <div className="context-scroll">
+            <section className="context-section summary-section"><div className="context-heading"><span>My summary</span></div><p>{activePaper.summary}</p></section>
+            <section className="context-section"><div className="context-heading"><span>Working note</span><span className="saved">Saved</span></div><textarea className="note-editor" value={notes[activePaper.id] ?? activePaper.note} onChange={(event) => updateNote(event.target.value)} placeholder="Write while you read…" /></section>
+            <section className="context-section"><div className="context-heading"><span>Tags</span></div><div className="tag-row">{activePaper.tags.map((tag) => <span key={tag} className="tag">{tag}</span>)}</div></section>
+            <section className="context-section"><div className="context-heading"><span>Highlights</span><button aria-label="Add highlight" onClick={() => void beginHighlight(activePaper)}>＋</button></div>{activePaper.highlights.length ? activePaper.highlights.map((highlight) => <div className="highlight-card" key={highlight.id}><span className="highlight-page">p. {highlight.page}</span><q>{highlight.text}</q>{highlight.comment && <small>{highlight.comment}</small>}</div>) : <p className="empty-copy">No highlights yet. Select PDF text, then press Control-H.</p>}</section>
+            <section className="context-section"><div className="context-heading"><span>Linked papers</span><button aria-label="Link paper" onClick={() => beginLinkPaper(activePaper)}>＋</button></div>
+              {activeLinks.length ? activeLinks.map((link) => {
+                const otherId = link.sourcePaperId === activePaper.id ? link.targetPaperId : link.sourcePaperId;
+                const paper = availablePapers.find((entry) => entry.id === otherId);
+                return paper ? <div className="linked-paper-row" key={link.id}><button className="linked-paper" onClick={() => { selectView({ kind: "library" }); selectPaper(paper); }}><span className="link-glyph">↗</span><span><b>{paperLabelFor(paper)} ({paper.year})</b><small><em>{link.relation}</em>{link.detail ? ` · ${link.detail}` : ""}</small></span></button><button className="unlink-button" aria-label={`Unlink ${paperLabelFor(paper)}`} title="Remove link" onClick={() => void removeLink(link.id)}>×</button></div> : null;
+              }) : <p className="empty-copy">No linked papers yet. Use + or right-click a paper.</p>}
+            </section>
+          </div> : <div className="context-scroll details-pane"><section className="context-section"><div className="detail-cover" style={{ "--cover": activePaper.color } as React.CSSProperties}><span>{paperLabelFor(activePaper)}</span><b>{activePaper.title}</b><small>{activePaper.year}</small></div></section><section className="context-section metadata-list"><dl><dt>Authors</dt><dd>{activePaper.authors}</dd><dt>Published</dt><dd>{activePaper.journal}</dd><dt>Year</dt><dd>{activePaper.year}</dd><dt>Status</dt><dd><span className="status-pill">{activePaper.status}</span></dd><dt>Cite key</dt><dd className="mono">{activePaper.id}{activePaper.year}</dd></dl></section></div>}
           <footer className="context-footer"><button onClick={openContextBuilder}><span>⬡</span> Prepare research context</button></footer>
         </aside>
       </> : <section className="empty-reader"><span>◇</span><h1>{activeViewName}</h1><p>No papers match this view. Import a PDF, or right-click a paper in Library to add it to a workspace.</p></section>}
     </div>
 
-    {menu && <><button className="menu-dismiss" aria-label="Close menu" onClick={() => setMenu(null)} /><div className="context-menu" style={{ left: Math.min(menu.x, window.innerWidth - 245), top: Math.min(menu.y, window.innerHeight - 320) }}>{selectedMenuPaper && <><button onClick={() => beginRenamePaper(selectedMenuPaper)}>✎ Rename in Lattice…</button><button onClick={() => void toggleFavorite(selectedMenuPaper.id)}>{libraryState.favoritePaperIds.includes(selectedMenuPaper.id) ? "☆ Remove from favorites" : "★ Add to favorites"}</button><div className="menu-label">Workspaces</div>{libraryState.workspaces.map((workspace) => { const checked = libraryState.memberships[workspace.id]?.includes(selectedMenuPaper.id); return <button key={workspace.id} onClick={() => void toggleMembership(workspace.id, selectedMenuPaper.id)}><span className="menu-check">{checked ? "✓" : ""}</span>{workspace.name}</button>; })}<div className="menu-rule" /><button className="danger-action" onClick={() => void removePaper(selectedMenuPaper)}>Remove from Lattice…</button></>}{selectedWorkspace && <><div className="menu-label">{selectedWorkspace.name}</div><button className="danger-action" onClick={() => void removeWorkspace(selectedWorkspace)}>Delete workspace…</button></>}</div></>}
+    {menu && <><button className="menu-dismiss" aria-label="Close menu" onClick={() => setMenu(null)} /><div className="context-menu" style={{ left: Math.min(menu.x, window.innerWidth - 245), top: Math.min(menu.y, window.innerHeight - 320) }}>{selectedMenuPaper && <><button onClick={() => beginRenamePaper(selectedMenuPaper)}>✎ Rename in Lattice…</button><button onClick={() => beginLinkPaper(selectedMenuPaper)}>↗ Link to paper…</button><button onClick={() => void toggleFavorite(selectedMenuPaper.id)}>{libraryState.favoritePaperIds.includes(selectedMenuPaper.id) ? "☆ Remove from favorites" : "★ Add to favorites"}</button><div className="menu-label">Workspaces</div>{libraryState.workspaces.map((workspace) => { const checked = libraryState.memberships[workspace.id]?.includes(selectedMenuPaper.id); return <button key={workspace.id} onClick={() => void toggleMembership(workspace.id, selectedMenuPaper.id)}><span className="menu-check">{checked ? "✓" : ""}</span>{workspace.name}</button>; })}<div className="menu-rule" /><button className="danger-action" onClick={() => void removePaper(selectedMenuPaper)}>Remove from Lattice…</button></>}{selectedWorkspace && <><div className="menu-label">{selectedWorkspace.name}</div><button className="danger-action" onClick={() => void removeWorkspace(selectedWorkspace)}>Delete workspace…</button></>}</div></>}
 
     {createWorkspaceOpen && <dialog open className="modal-backdrop"><form className="small-modal" onSubmit={(event) => { event.preventDefault(); void addWorkspace(); }}><span className="eyebrow">New collection</span><h2>Add workspace</h2><label>Workspace name<input value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="e.g. Inflation expectations" /></label><footer><button type="button" className="secondary-action" onClick={() => setCreateWorkspaceOpen(false)}>Cancel</button><button type="submit" className="primary-action" disabled={!workspaceName.trim()}>Create</button></footer></form></dialog>}
     {renamePaperId && <dialog open className="modal-backdrop"><form className="small-modal" onSubmit={(event) => { event.preventDefault(); void renamePaper(); }}><span className="eyebrow">Library label</span><h2>Rename in Lattice</h2><p>This changes the short label shown in Lattice. The paper title and PDF filename stay exactly as they are.</p><label>Paper label<input value={paperLabel} onChange={(event) => setPaperLabel(event.target.value)} placeholder="e.g. Auclert, Rognlie & Straub" /></label><footer><button type="button" className="secondary-action" onClick={() => setRenamePaperId(null)}>Cancel</button><button type="submit" className="primary-action" disabled={!paperLabel.trim()}>Rename</button></footer></form></dialog>}
+    {linkSourceId && linkSourcePaper && <dialog open className="modal-backdrop"><form className="link-modal" onSubmit={(event) => { event.preventDefault(); void saveLink(); }}><span className="eyebrow">{paperLabelFor(linkSourcePaper)}</span><h2>Link to paper</h2><p>Record an intellectual relationship between two papers. The link will appear from both papers.</p>{linkCandidates.length ? <div className="link-fields"><label>Paper<select value={linkTargetId} onChange={(event) => setLinkTargetId(event.target.value)}>{linkCandidates.map((paper) => <option key={paper.id} value={paper.id}>{paperLabelFor(paper)} — {paper.title}</option>)}</select></label><label>Relation<input value={linkRelation} onChange={(event) => setLinkRelation(event.target.value)} placeholder="e.g. extension, contrast, mechanism" /></label><label>Note <small>optional</small><textarea value={linkDetail} onChange={(event) => setLinkDetail(event.target.value)} placeholder="What is the connection?" /></label></div> : <p className="empty-copy">Every other paper is already linked to this one.</p>}<footer><button type="button" className="secondary-action" onClick={() => setLinkSourceId(null)}>Cancel</button><button type="submit" className="primary-action" disabled={!linkTargetId || !linkCandidates.length}>Save link</button></footer></form></dialog>}
     {highlightOpen && activePaper && <dialog open className="modal-backdrop"><form className="highlight-modal" onSubmit={(event) => { event.preventDefault(); void saveHighlight(); }}><span className="eyebrow">{paperLabelFor(activePaper)}</span><h2>Add highlight</h2><p>{activePaper.pdfUrl ? "Paste copied PDF text below if it was not captured automatically." : "The selected passage is ready to save."}</p><div className="highlight-fields"><label className="page-field">Page<input type="number" min="1" value={highlightPage} onChange={(event) => setHighlightPage(event.target.value)} /></label><label>Passage<textarea value={highlightText} onChange={(event) => setHighlightText(event.target.value)} placeholder="Paste the selected text…" /></label><label>Comment <small>optional</small><textarea value={highlightComment} onChange={(event) => setHighlightComment(event.target.value)} placeholder="Why does this matter?" /></label></div><footer><button type="button" className="secondary-action" onClick={() => setHighlightOpen(false)}>Cancel</button><button type="submit" className="primary-action" disabled={!highlightText.trim()}>Save highlight</button></footer></form></dialog>}
     {commandOpen && <dialog open className="command-backdrop" aria-label="Search library" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommandOpen(false); }}><div className="command-palette"><div className="command-input"><span>⌕</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your research library…" /><kbd>esc</kbd></div><div className="command-results"><span className="command-label">Papers</span>{commandResults.map((paper) => <button key={paper.id} onClick={() => { selectView({ kind: "library" }); selectPaper(paper); setCommandOpen(false); }}><span className="result-icon">PDF</span><span><b>{paper.title}</b><small>{paper.authors} · {paper.year}</small></span><em>↵</em></button>)}</div><div className="command-hint"><span>↵ to open</span><span>⌘K to close</span></div></div></dialog>}
     {contextOpen && <dialog open className="context-builder-backdrop" aria-label="Prepare research context" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setContextOpen(false); }}><section className="context-builder"><header><div><span className="eyebrow">Research bundle</span><h2>Prepare context</h2></div><button className="close-button" onClick={() => setContextOpen(false)} aria-label="Close">×</button></header><p className="builder-intro">Choose papers to carry into your next LLM conversation. Summaries, notes, and highlights are included automatically.</p><div className="context-paper-choices">{availablePapers.map((paper) => { const checked = contextIds.includes(paper.id); return <label className={checked ? "checked" : ""} key={paper.id}><input type="checkbox" checked={checked} onChange={() => setContextIds((ids) => checked ? ids.filter((id) => id !== paper.id) : [...ids, paper.id])} /><span className="choice-check">{checked ? "✓" : ""}</span><span className="choice-copy"><b>{paper.title}</b><small>{paperLabelFor(paper)} · {paper.year}</small></span><span className="choice-count">{paper.highlights.length} highlights</span></label>; })}</div><div className="bundle-summary"><span>{contextIds.length} papers</span><span>Notes + highlights</span><span>Markdown</span></div><footer><button className="secondary-action" disabled={!contextIds.length} onClick={downloadContext}>Download .md</button><button className="primary-action" disabled={!contextIds.length} onClick={copyContext}>{copyState}</button></footer></section></dialog>}

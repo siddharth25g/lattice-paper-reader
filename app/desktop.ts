@@ -3,7 +3,7 @@ import { basename, documentDir, join } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { BaseDirectory, copyFile, exists, mkdir } from "@tauri-apps/plugin-fs";
 import Database from "@tauri-apps/plugin-sql";
-import type { Highlight, LibraryState, Paper, Workspace } from "./types";
+import type { Highlight, LibraryState, Paper, PaperLink, Workspace } from "./types";
 
 const LIBRARY_FOLDER = "Lattice Library";
 const PDF_FOLDER = `${LIBRARY_FOLDER}/PDFs`;
@@ -92,6 +92,20 @@ async function database() {
         label TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS paper_links (
+        id TEXT PRIMARY KEY,
+        source_paper_id TEXT NOT NULL,
+        target_paper_id TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      const linksSeeded = await db.select<{ value: string }[]>("SELECT value FROM app_meta WHERE key = 'default_links_seeded'");
+      if (!linksSeeded.length) {
+        await db.execute("INSERT OR IGNORE INTO paper_links (id, source_paper_id, target_paper_id, relation, detail) VALUES ($1, $2, $3, $4, $5)", ["starter-link-kaplan", "auclert", "kaplan", "mechanism", "Indirect income effects"]);
+        await db.execute("INSERT OR IGNORE INTO paper_links (id, source_paper_id, target_paper_id, relation, detail) VALUES ($1, $2, $3, $4, $5)", ["starter-link-cochrane", "auclert", "cochrane", "contrast", "Debt valuation channel"]);
+        await db.execute("INSERT INTO app_meta (key, value) VALUES ('default_links_seeded', '1')");
+      }
       const seeded = await db.select<{ value: string }[]>("SELECT value FROM app_meta WHERE key = 'default_workspaces_seeded'");
       if (!seeded.length) {
         await db.execute("INSERT INTO workspaces (id, name, color) VALUES ($1, $2, $3)", ["hank-ftpl", "HANK × FTPL", "#a95a43"]);
@@ -117,7 +131,7 @@ function rowToPaper(row: PaperRow): Paper {
     year: Number(row.year),
     journal: row.journal,
     status: row.status,
-    tags: JSON.parse(row.tags) as string[],
+    tags: (JSON.parse(row.tags) as string[]).filter((tag) => tag !== "Inbox"),
     color: row.color,
     summary: row.summary,
     note: row.note ?? "",
@@ -188,7 +202,7 @@ export async function importDesktopPaper(): Promise<Paper | null> {
     year: detectedYear,
     journal: "Local PDF",
     status: "To read",
-    tags: ["Inbox"],
+    tags: [],
     color: "#7b7469",
     summary: "Add a concise summary after reading this paper.",
     note: "",
@@ -220,7 +234,7 @@ export async function saveDesktopNote(paperId: string, body: string) {
 
 export async function loadDesktopLibraryState(): Promise<LibraryState> {
   const db = await database();
-  const [workspaces, memberships, hidden, highlights, favorites, recent, aliases] = await Promise.all([
+  const [workspaces, memberships, hidden, highlights, favorites, recent, aliases, links] = await Promise.all([
     db.select<Workspace[]>("SELECT id, name, color FROM workspaces ORDER BY created_at ASC"),
     db.select<{ workspace_id: string; paper_id: string }[]>("SELECT workspace_id, paper_id FROM workspace_papers"),
     db.select<{ paper_id: string }[]>("SELECT paper_id FROM hidden_papers"),
@@ -228,6 +242,7 @@ export async function loadDesktopLibraryState(): Promise<LibraryState> {
     db.select<{ paper_id: string }[]>("SELECT paper_id FROM favorite_papers"),
     db.select<{ paper_id: string }[]>("SELECT paper_id FROM paper_activity ORDER BY last_opened_at DESC LIMIT 50"),
     db.select<{ paper_id: string; label: string }[]>("SELECT paper_id, label FROM paper_aliases"),
+    db.select<{ id: string; source_paper_id: string; target_paper_id: string; relation: string; detail: string }[]>("SELECT id, source_paper_id, target_paper_id, relation, detail FROM paper_links ORDER BY created_at ASC"),
   ]);
   const membershipMap: Record<string, string[]> = {};
   for (const row of memberships) (membershipMap[row.workspace_id] ??= []).push(row.paper_id);
@@ -243,6 +258,7 @@ export async function loadDesktopLibraryState(): Promise<LibraryState> {
     favoritePaperIds: favorites.map((row) => row.paper_id),
     recentPaperIds: recent.map((row) => row.paper_id),
     paperAliases: Object.fromEntries(aliases.map((row) => [row.paper_id, row.label])),
+    paperLinks: links.map((row) => ({ id: row.id, sourcePaperId: row.source_paper_id, targetPaperId: row.target_paper_id, relation: row.relation, detail: row.detail })),
   };
 }
 
@@ -270,6 +286,7 @@ export async function removeDesktopPaper(paperId: string, imported: boolean) {
   await db.execute("DELETE FROM favorite_papers WHERE paper_id = $1", [paperId]);
   await db.execute("DELETE FROM paper_activity WHERE paper_id = $1", [paperId]);
   await db.execute("DELETE FROM paper_aliases WHERE paper_id = $1", [paperId]);
+  await db.execute("DELETE FROM paper_links WHERE source_paper_id = $1 OR target_paper_id = $1", [paperId]);
   if (imported) {
     await db.execute("DELETE FROM notes WHERE paper_id = $1", [paperId]);
     await db.execute("DELETE FROM papers WHERE id = $1", [paperId]);
@@ -308,4 +325,17 @@ export async function saveDesktopPaperAlias(paperId: string, label: string) {
      ON CONFLICT(paper_id) DO UPDATE SET label = excluded.label, updated_at = CURRENT_TIMESTAMP`,
     [paperId, label],
   );
+}
+
+export async function saveDesktopPaperLink(link: PaperLink) {
+  const db = await database();
+  await db.execute(
+    "INSERT INTO paper_links (id, source_paper_id, target_paper_id, relation, detail) VALUES ($1, $2, $3, $4, $5)",
+    [link.id, link.sourcePaperId, link.targetPaperId, link.relation, link.detail],
+  );
+}
+
+export async function deleteDesktopPaperLink(linkId: string) {
+  const db = await database();
+  await db.execute("DELETE FROM paper_links WHERE id = $1", [linkId]);
 }

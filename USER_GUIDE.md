@@ -13,9 +13,9 @@ keeping track of intellectual relationships between papers.
    linked papers. Notes save automatically in the local database.
 5. Select **+** beside **Workspaces** to make a project. Right-click a paper to
    rename its short Lattice label, add it to one or several workspaces, mark it
-   as a favorite, or remove it from Lattice. Renaming the label does not change
-   the academic title or PDF filename. Right-click a workspace to delete it;
-   its papers remain in Library.
+   as a favorite, link it to another paper, or remove it from Lattice. Renaming
+   the label does not change the academic title or PDF filename. Right-click a
+   workspace to delete it; its papers remain in Library.
 6. Press **⌘K** to search the library quickly.
 7. Select **Prepare research context** to choose several papers and copy or
    download a Markdown bundle containing their summaries, notes, and
@@ -23,8 +23,8 @@ keeping track of intellectual relationships between papers.
 
 ## Saving a highlight
 
-1. Select text in the PDF and press **⌘C**.
-2. Press **H**, or select the highlight button in the reader toolbar.
+1. Select text directly in the PDF.
+2. Press **Control-H**, or select the highlight button in the reader toolbar.
 3. Check the passage, enter its page number, and optionally add a comment.
 4. Select **Save highlight**. It appears in the right sidebar and is included in
    research-context exports.
@@ -32,6 +32,17 @@ keeping track of intellectual relationships between papers.
 Lattice currently stores the passage, page, and comment in its local database.
 It does not yet draw the highlight onto the PDF or write a standard PDF
 annotation.
+
+## Inbox and links
+
+- **Library** contains every paper in Lattice.
+- **Inbox** contains only papers that do not belong to any workspace. Adding a
+  paper to its first workspace removes it from Inbox automatically; removing it
+  from its last workspace returns it to Inbox.
+- To link papers, right-click a paper and choose **Link to paper…**, or select
+  **+** beside **Linked papers** in the right panel. Choose the other paper and
+  describe the relationship. Links appear from both papers and can be removed
+  with the × beside the link.
 
 ## Removing things safely
 
@@ -50,6 +61,6 @@ them anywhere.
 
 ## Current limitation
 
-Imported PDFs currently use the macOS embedded PDF viewer. Highlights are
-durable passage records, but anchored colored overlays and standard PDF
-annotation writeback are not implemented yet.
+Imported PDFs use Lattice's local selectable PDF reader. Highlights are durable
+passage records, but restoring anchored colored overlays after reopening and
+standard PDF annotation writeback are not implemented yet.

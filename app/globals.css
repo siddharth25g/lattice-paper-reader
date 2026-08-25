@@ -94,6 +94,19 @@ kbd { font-family: inherit; font-size: 10px; color: #74766f; background: #f2f2ee
 .paper-page { position: relative; width: min(100%, 630px); min-height: 815px; background: #fffefa; color: #24231f; padding: 64px 76px 66px; box-shadow: 0 1px 2px rgba(24,24,20,.12), 0 8px 26px rgba(24,24,20,.08); font-family: Georgia, "Times New Roman", serif; font-size: 12.5px; line-height: 1.68; }
 .pdf-frame-wrap { height: calc(100vh - 180px); min-width: 520px; max-width: 980px; background: white; box-shadow: 0 1px 2px rgba(24,24,20,.12), 0 8px 26px rgba(24,24,20,.08); }
 .pdf-frame { width: 100%; height: 100%; border: 0; background: white; }
+.pdf-document { display: grid; justify-items: center; gap: 24px; min-width: 0; }
+.pdf-page { position: relative; flex: 0 0 auto; background: white; box-shadow: 0 1px 2px rgba(24,24,20,.12), 0 8px 26px rgba(24,24,20,.08); }
+.pdf-page canvas { position: absolute; inset: 0; display: block; }
+.pdf-page-label { position: absolute; right: -34px; top: 3px; width: 24px; color: #85877f; font-size: 9px; text-align: center; user-select: none; }
+.pdf-load-state { width: 520px; min-height: 300px; display: grid; place-content: center; justify-items: center; gap: 8px; background: white; color: #85877f; font-family: var(--font-serif); box-shadow: 0 1px 2px rgba(24,24,20,.12); }
+.pdf-load-state b { color: #555850; font-size: 14px; }
+.pdf-spinner { width: 18px; height: 18px; border: 2px solid #deded7; border-top-color: var(--accent); border-radius: 50%; animation: pdf-spin .8s linear infinite; }
+@keyframes pdf-spin { to { transform: rotate(360deg); } }
+.textLayer { position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1; text-align: initial; letter-spacing: normal; word-spacing: normal; transform-origin: 0 0; -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none; z-index: 1; --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size)); }
+.textLayer :is(span, br) { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0 0; user-select: text; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) { z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height)); --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
+.textLayer .markedContent { display: contents; }
+.textLayer ::selection { background: rgba(214, 171, 53, .38); color: transparent; }
 .journal-line { text-align: center; font-size: 8px; letter-spacing: .15em; color: #5e5c55; margin-bottom: 38px; }
 .paper-page h2 { font-size: 17px; line-height: 1.3; text-align: center; letter-spacing: .02em; font-weight: 500; max-width: 410px; margin: 0 auto 13px; }
 .paper-authors, .paper-date { text-align: center; margin: 0; font-size: 10.5px; }
@@ -129,6 +142,9 @@ kbd { font-family: inherit; font-size: 10px; color: #74766f; background: #f2f2ee
 .highlight-card small { color: #8b8d85; font-size: 9.5px; }
 .empty-copy { color: #989a92; font-size: 11px; line-height: 1.5; margin: 0; }
 .linked-paper { width: 100%; display: grid; grid-template-columns: 24px 1fr; gap: 6px; border: 0; background: transparent; text-align: left; padding: 6px 0; cursor: pointer; }
+.linked-paper-row { display: grid; grid-template-columns: 1fr 25px; align-items: center; }
+.unlink-button { width: 23px; height: 23px; border: 0; border-radius: 5px; background: transparent; color: #999b94; cursor: pointer; }
+.unlink-button:hover { background: #ecece6; color: #9e4937; }
 .link-glyph { width: 22px; height: 22px; display: grid; place-items: center; background: #ecece6; border-radius: 5px; color: #74766e; }
 .linked-paper b { display: block; font-size: 10.5px; font-weight: 620; line-height: 15px; }
 .linked-paper small { display: block; color: #8a8c84; font-size: 9.5px; }
@@ -161,22 +177,27 @@ kbd { font-family: inherit; font-size: 10px; color: #74766f; background: #f2f2ee
 .menu-rule { height: 1px; margin: 5px 3px; background: var(--line); }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 125; width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; border: 0; padding: 0; display: grid; place-items: center; background: rgba(35,36,32,.38); backdrop-filter: blur(2px); }
-.small-modal, .highlight-modal { width: min(430px, calc(100vw - 40px)); border: 1px solid #cacac2; border-radius: 10px; background: #fafaf7; box-shadow: 0 24px 70px rgba(24,24,20,.28); padding: 23px; }
+.small-modal, .highlight-modal, .link-modal { width: min(430px, calc(100vw - 40px)); border: 1px solid #cacac2; border-radius: 10px; background: #fafaf7; box-shadow: 0 24px 70px rgba(24,24,20,.28); padding: 23px; }
 .highlight-modal { width: min(560px, calc(100vw - 40px)); }
-.small-modal h2, .highlight-modal h2 { margin: 3px 0 19px; font-family: var(--font-serif); font-size: 22px; font-weight: 590; }
+.link-modal { width: min(520px, calc(100vw - 40px)); }
+.small-modal h2, .highlight-modal h2, .link-modal h2 { margin: 3px 0 19px; font-family: var(--font-serif); font-size: 22px; font-weight: 590; }
 .small-modal > p { margin: -10px 0 18px; color: #74766f; font-family: var(--font-serif); font-size: 12px; line-height: 1.45; }
+.link-modal > p { margin: -10px 0 18px; color: #74766f; font-family: var(--font-serif); font-size: 12px; line-height: 1.45; }
 .highlight-modal h2 { margin-bottom: 5px; }
 .highlight-modal > p { margin: 0 0 18px; color: #74766f; font-family: var(--font-serif); font-size: 12.5px; line-height: 1.45; }
-.small-modal label, .highlight-fields label { display: grid; gap: 6px; color: #666961; font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
-.small-modal input, .highlight-fields input, .highlight-fields textarea { width: 100%; border: 1px solid #d4d4cc; border-radius: 6px; background: white; color: var(--ink); padding: 9px 10px; font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.small-modal label, .highlight-fields label, .link-fields label { display: grid; gap: 6px; color: #666961; font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
+.small-modal input, .highlight-fields input, .highlight-fields textarea, .link-fields input, .link-fields textarea, .link-fields select { width: 100%; border: 1px solid #d4d4cc; border-radius: 6px; background: white; color: var(--ink); padding: 9px 10px; font: 400 12px var(--font-geist-sans); letter-spacing: 0; text-transform: none; }
 .highlight-fields { display: grid; grid-template-columns: 75px 1fr; gap: 13px; }
 .highlight-fields label:not(.page-field) { grid-column: 1 / -1; }
 .highlight-fields textarea { min-height: 82px; resize: vertical; font-family: inherit; line-height: 1.45; }
 .highlight-fields label:last-child textarea { min-height: 59px; }
 .highlight-fields label small { color: #9a9c94; font-weight: 450; text-transform: none; }
-.small-modal footer, .highlight-modal footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 21px; }
-.small-modal footer button, .highlight-modal footer button { min-width: 82px; height: 32px; border-radius: 6px; font-size: 11px; cursor: pointer; }
-.small-modal footer button:disabled, .highlight-modal footer button:disabled { opacity: .45; cursor: default; }
+.link-fields { display: grid; gap: 13px; }
+.link-fields textarea { min-height: 64px; resize: vertical; }
+.link-fields label small { color: #9a9c94; font-weight: 450; text-transform: none; }
+.small-modal footer, .highlight-modal footer, .link-modal footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 21px; }
+.small-modal footer button, .highlight-modal footer button, .link-modal footer button { min-width: 82px; height: 32px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+.small-modal footer button:disabled, .highlight-modal footer button:disabled, .link-modal footer button:disabled { opacity: .45; cursor: default; }
 .toast { position: fixed; z-index: 150; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 9px 14px; border-radius: 7px; background: #30322d; color: white; box-shadow: 0 8px 28px rgba(20,20,17,.24); font-size: 10.5px; }
 
 .command-backdrop { position: fixed; inset: 0; width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; border: 0; z-index: 100; background: rgba(36,37,33,.35); backdrop-filter: blur(2px); display: flex; justify-content: center; padding-top: 12vh; }

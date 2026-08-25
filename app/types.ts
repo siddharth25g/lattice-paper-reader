@@ -29,6 +29,14 @@ export type Workspace = {
   color: string;
 };
 
+export type PaperLink = {
+  id: string;
+  sourcePaperId: string;
+  targetPaperId: string;
+  relation: string;
+  detail: string;
+};
+
 export type LibraryState = {
   workspaces: Workspace[];
   memberships: Record<string, string[]>;
@@ -37,4 +45,5 @@ export type LibraryState = {
   favoritePaperIds: string[];
   recentPaperIds: string[];
   paperAliases: Record<string, string>;
+  paperLinks: PaperLink[];
 };

@@ -48,11 +48,12 @@ npm run desktop:build -- --bundles app
 - Right-click paper/workspace management with confirmation-safe removal
 - Custom paper labels that leave academic titles and PDF filenames unchanged
 - Local passage highlights with page numbers and comments
+- Automatic unassigned-paper Inbox and persistent paper-to-paper links
 - Multi-paper Markdown context bundles for use with ChatGPT
 
-PDF rendering currently uses the macOS web view. Saving a highlight uses a
-select-copy-press-H workflow. Anchored colored overlays and standard PDF
-annotation writeback remain the next major implementation milestone.
+PDF rendering uses an in-app PDF.js text layer, so saving a highlight uses a
+select-then-Control-H workflow. Restoring anchored colored overlays after
+reopening and standard PDF annotation writeback remain major milestones.
 
 ## Contributing with an LLM coding agent
 
