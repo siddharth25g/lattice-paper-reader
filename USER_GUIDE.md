@@ -19,7 +19,11 @@ keeping track of intellectual relationships between papers.
    the label does not change the academic title or PDF filename. Right-click a
    workspace to delete it; its papers remain in Library.
 6. Press **⌘K** to search the library quickly.
-7. Select **Prepare research context** to choose several papers and copy or
+7. Press **Control-F** or **Command-F** while reading to search inside the
+   current PDF. Enter moves to the next result and Shift-Enter moves back. The
+   page field in the reader toolbar shows your current page; type another page
+   and press Enter to jump there.
+8. Select **Prepare research context** to choose several papers and copy or
    download a Markdown bundle containing their summaries, notes, and
    highlights. Attach that bundle and the relevant PDFs to ChatGPT.
 
@@ -28,15 +32,21 @@ keeping track of intellectual relationships between papers.
 1. Select text directly in the PDF.
 2. Press **Control-H**, or select the highlight button in the reader toolbar.
 3. Check the passage, enter its page number, and optionally add a comment.
-4. Select **Save highlight**. It appears in the right sidebar and is included in
-   research-context exports.
+4. Select **Save highlight**. It appears in yellow over the PDF text, in the
+   right sidebar, and in research-context exports. Selecting its sidebar card
+   jumps back to its page.
 
 Use the pencil beside a saved highlight to edit its passage, page, or comment.
 Deleting a highlight asks for confirmation and never changes the PDF itself.
 
-Lattice currently stores the passage, page, and comment in its local database.
-It does not yet draw the highlight onto the PDF or write a standard PDF
-annotation.
+Lattice stores the passage, page, comment, and scaled page position in its local
+database. Existing passage-only highlights are re-anchored when their page is
+rendered. Lattice does not yet write a standard annotation into the PDF file.
+
+## Tags
+
+Select **Edit** beside **Tags**, enter comma-separated tags, and save. Editing
+tags changes only Lattice's local metadata, not the PDF.
 
 ## Inbox and links
 
@@ -75,6 +85,7 @@ them anywhere.
 
 ## Current limitation
 
-Imported PDFs use Lattice's local selectable PDF reader. Highlights are durable
-passage records, but restoring anchored colored overlays after reopening and
-standard PDF annotation writeback are not implemented yet.
+Imported PDFs use Lattice's local selectable PDF reader. Search depends on the
+PDF containing an extractable text layer; image-only scans need OCR before their
+text can be searched or selected. Standard PDF annotation writeback is not yet
+implemented.

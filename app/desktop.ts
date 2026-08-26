@@ -117,6 +117,16 @@ async function database() {
         summary TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS highlight_anchors (
+        highlight_id TEXT PRIMARY KEY,
+        rects TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS paper_tag_overrides (
+        paper_id TEXT PRIMARY KEY,
+        tags TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
       const notesMigrated = await db.select<{ value: string }[]>("SELECT value FROM app_meta WHERE key = 'working_notes_migrated'");
       if (!notesMigrated.length) {
         await db.execute(`INSERT OR IGNORE INTO working_notes (id, paper_id, title, body, position)
@@ -164,6 +174,13 @@ function rowToPaper(row: PaperRow): Paper {
     fileName: row.file_name,
     imported: true,
   };
+}
+
+function parseTags(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((tag): tag is string => typeof tag === "string") : [];
+  } catch { return []; }
 }
 
 export async function loadDesktopPapers(): Promise<Paper[]> {
@@ -269,22 +286,27 @@ export async function deleteDesktopWorkingNote(noteId: string) {
 
 export async function loadDesktopLibraryState(): Promise<LibraryState> {
   const db = await database();
-  const [workspaces, memberships, hidden, highlights, favorites, recent, aliases, links, metadata] = await Promise.all([
+  const [workspaces, memberships, hidden, highlights, favorites, recent, aliases, links, metadata, tagOverrides] = await Promise.all([
     db.select<Workspace[]>("SELECT id, name, color FROM workspaces ORDER BY created_at ASC"),
     db.select<{ workspace_id: string; paper_id: string }[]>("SELECT workspace_id, paper_id FROM workspace_papers"),
     db.select<{ paper_id: string }[]>("SELECT paper_id FROM hidden_papers"),
-    db.select<{ id: string; paper_id: string; page: number; selected_text: string; comment: string }[]>("SELECT id, paper_id, page, selected_text, comment FROM highlights ORDER BY created_at ASC"),
+    db.select<{ id: string; paper_id: string; page: number; selected_text: string; comment: string; rects: string | null }[]>(`SELECT highlights.id, highlights.paper_id, highlights.page, highlights.selected_text, highlights.comment, highlight_anchors.rects
+      FROM highlights LEFT JOIN highlight_anchors ON highlight_anchors.highlight_id = highlights.id
+      ORDER BY highlights.created_at ASC`),
     db.select<{ paper_id: string }[]>("SELECT paper_id FROM favorite_papers"),
     db.select<{ paper_id: string }[]>("SELECT paper_id FROM paper_activity ORDER BY last_opened_at DESC LIMIT 50"),
     db.select<{ paper_id: string; label: string }[]>("SELECT paper_id, label FROM paper_aliases"),
     db.select<{ id: string; source_paper_id: string; target_paper_id: string; relation: string; detail: string }[]>("SELECT id, source_paper_id, target_paper_id, relation, detail FROM paper_links ORDER BY created_at ASC"),
     db.select<{ paper_id: string; authors: string; year: number; journal: string; summary: string }[]>("SELECT paper_id, authors, year, journal, summary FROM paper_metadata_overrides"),
+    db.select<{ paper_id: string; tags: string }[]>("SELECT paper_id, tags FROM paper_tag_overrides"),
   ]);
   const membershipMap: Record<string, string[]> = {};
   for (const row of memberships) (membershipMap[row.workspace_id] ??= []).push(row.paper_id);
   const highlightMap: Record<string, Highlight[]> = {};
   for (const row of highlights) {
-    (highlightMap[row.paper_id] ??= []).push({ id: row.id, page: Number(row.page), text: row.selected_text, comment: row.comment });
+    let rects = [];
+    try { rects = row.rects ? JSON.parse(row.rects) : []; } catch { rects = []; }
+    (highlightMap[row.paper_id] ??= []).push({ id: row.id, page: Number(row.page), text: row.selected_text, comment: row.comment, rects });
   }
   return {
     workspaces,
@@ -296,6 +318,7 @@ export async function loadDesktopLibraryState(): Promise<LibraryState> {
     paperAliases: Object.fromEntries(aliases.map((row) => [row.paper_id, row.label])),
     paperLinks: links.map((row) => ({ id: row.id, sourcePaperId: row.source_paper_id, targetPaperId: row.target_paper_id, relation: row.relation, detail: row.detail })),
     metadataOverrides: Object.fromEntries(metadata.map((row) => [row.paper_id, { authors: row.authors, year: Number(row.year), journal: row.journal, summary: row.summary }])),
+    tagOverrides: Object.fromEntries(tagOverrides.map((row) => [row.paper_id, parseTags(row.tags)])),
   };
 }
 
@@ -307,6 +330,15 @@ export async function saveDesktopPaperMetadata(paperId: string, metadata: PaperM
      ON CONFLICT(paper_id) DO UPDATE SET authors = excluded.authors, year = excluded.year,
        journal = excluded.journal, summary = excluded.summary, updated_at = CURRENT_TIMESTAMP`,
     [paperId, metadata.authors, metadata.year, metadata.journal, metadata.summary],
+  );
+}
+
+export async function saveDesktopPaperTags(paperId: string, tags: string[]) {
+  const db = await database();
+  await db.execute(
+    `INSERT INTO paper_tag_overrides (paper_id, tags, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT(paper_id) DO UPDATE SET tags = excluded.tags, updated_at = CURRENT_TIMESTAMP`,
+    [paperId, JSON.stringify(tags)],
   );
 }
 
@@ -337,6 +369,8 @@ export async function removeDesktopPaper(paperId: string, imported: boolean) {
   await db.execute("DELETE FROM paper_links WHERE source_paper_id = $1 OR target_paper_id = $1", [paperId]);
   await db.execute("DELETE FROM working_notes WHERE paper_id = $1", [paperId]);
   await db.execute("DELETE FROM paper_metadata_overrides WHERE paper_id = $1", [paperId]);
+  await db.execute("DELETE FROM paper_tag_overrides WHERE paper_id = $1", [paperId]);
+  await db.execute("DELETE FROM highlight_anchors WHERE highlight_id NOT IN (SELECT id FROM highlights)");
   if (imported) {
     await db.execute("DELETE FROM notes WHERE paper_id = $1", [paperId]);
     await db.execute("DELETE FROM papers WHERE id = $1", [paperId]);
@@ -352,10 +386,16 @@ export async function saveDesktopHighlight(paperId: string, highlight: Highlight
      ON CONFLICT(id) DO UPDATE SET page = excluded.page, selected_text = excluded.selected_text, comment = excluded.comment`,
     [highlight.id, paperId, highlight.page, highlight.text, highlight.comment],
   );
+  await db.execute(
+    `INSERT INTO highlight_anchors (highlight_id, rects, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT(highlight_id) DO UPDATE SET rects = excluded.rects, updated_at = CURRENT_TIMESTAMP`,
+    [highlight.id, JSON.stringify(highlight.rects ?? [])],
+  );
 }
 
 export async function deleteDesktopHighlight(highlightId: string) {
   const db = await database();
+  await db.execute("DELETE FROM highlight_anchors WHERE highlight_id = $1", [highlightId]);
   await db.execute("DELETE FROM highlights WHERE id = $1", [highlightId]);
 }
 

@@ -48,13 +48,17 @@ npm run desktop:build -- --bundles app
 - Right-click paper/workspace management with confirmation-safe removal
 - Custom paper labels that leave academic titles and PDF filenames unchanged
 - Local editable passage highlights with page numbers and comments
+- Persistent yellow highlight overlays that stay aligned when zooming
+- In-PDF search, live page position, and direct page-number navigation
+- Editable local tags
 - Automatic unassigned-paper Inbox and editable paper-to-paper links
 - Conservative author/year suggestions from PDF metadata and the first page
 - Multi-paper Markdown context bundles for use with ChatGPT
 
-PDF rendering uses PDF.js's full selectable text layer, so saving a highlight
-uses a select-then-Control-H workflow. Restoring anchored colored overlays
-after reopening and standard PDF annotation writeback remain major milestones.
+PDF rendering uses PDF.js's full selectable text layer. Saving a highlight uses
+a select-then-Control-H workflow, and its scaled page position is stored locally
+so the yellow overlay returns after reopening. Standard PDF annotation
+writeback remains a future milestone.
 
 ## Contributing with an LLM coding agent
 

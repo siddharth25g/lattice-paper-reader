@@ -1,8 +1,16 @@
+export type HighlightRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type Highlight = {
   id: string;
   page: number;
   text: string;
   comment: string;
+  rects?: HighlightRect[];
 };
 
 export type Paper = {
@@ -67,4 +75,5 @@ export type LibraryState = {
   paperAliases: Record<string, string>;
   paperLinks: PaperLink[];
   metadataOverrides: Record<string, PaperMetadataOverride>;
+  tagOverrides: Record<string, string[]>;
 };

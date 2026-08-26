@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — 2026-08-26
+
+- Added PDF text search with next/previous navigation.
+- Added live page position and direct page-number jumps.
+- Added durable, zoom-safe yellow highlight overlays and automatic re-anchoring
+  for older passage-only highlights.
+- Added editable local paper tags.
+- Increased interface text and control glyph sizes without increasing toolbar
+  or sidebar row heights.
+- Replaced inert reader controls and made full screen a true toggle.
+
 ## 0.2.0 — 2026-08-25
 
 - Made Inbox automatically contain only papers with no workspace.
